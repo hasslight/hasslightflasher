@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #rm -fr build dist
 VERSION=4.0
-NAME=NodeMCU-PyFlasher
+NAME=HassLightFlasher
 
 pyinstaller --log-level=DEBUG \
             --noconfirm \

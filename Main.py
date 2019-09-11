@@ -8,6 +8,7 @@ import wx.lib.mixins.inspection
 import sys
 import os
 import esptool
+import serial.tools.miniterm as miniterm
 import threading
 import json
 import images as images
@@ -72,6 +73,9 @@ class FlashingThread(threading.Thread):
         self._parent = parent
         self._config = config
 
+# esptool.py --chip esp8266 -p /dev/cu.wchusbserial620 --baud 115200 write_flash -fs detect -fm dio -ff 40m 
+# 0x0 firmware/rboot.bin 0x1000 firmware/blank_config.bin 0x2000 firmware/led_strip_animation.bin 
+# && miniterm.py /dev/cu.wchusbserial620 115200
     def run(self):
         try:
             command = []
@@ -81,10 +85,14 @@ class FlashingThread(threading.Thread):
                 command.append(self._config.port)
 
             command.extend(["--baud", str(self._config.baud),
-                            "--after", "no_reset",
+                            # "--after", "soft_reset",
                             "write_flash",
+                            "--flash_size", "detect",
                             "--flash_mode", self._config.mode,
-                            "0x00000", self._config.firmware_path])
+                            "--flash_freq", "40m",
+                            "0x0", self._config.rboot_path,
+                            "0x1000", self._config.blank_config_path,
+                            "0x2000", self._config.firmware_path])
 
             if self._config.erase_before_flash:
                 command.append("--erase-all")
@@ -104,6 +112,38 @@ class FlashingThread(threading.Thread):
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+class DebugThread(threading.Thread):
+    def __init__(self, parent, config):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self._parent = parent
+        self._config = config
+    
+    def stop(self):
+        self.worker.stop()
+    
+    def run(self):
+        try:
+            command = []
+
+            if not self._config.port.startswith(__auto_select__):
+                # command.append("--port")
+                command.append(str(self._config.port))
+
+            command.append(int(self._config.baud))
+            
+            print("Command: miniterm.py %s\n" % " ".join(str(command)))
+            print("\nClick a button or dosomething if nothing shows up")
+
+            self.worker = miniterm.main(default_port=self._config.port, default_baudrate=self._config.baud)
+
+        except SerialException as e:
+            self._parent.report_error(e.strerror)
+            raise e
+
+
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # DTO between GUI and flashing thread
@@ -113,6 +153,8 @@ class FlashConfig:
         self.erase_before_flash = False
         self.mode = "dio"
         self.firmware_path = None
+        self.rboot_path = None
+        self.blank_config_path = None
         self.port = None
 
     @classmethod
@@ -154,6 +196,7 @@ class NodeMcuFlasher(wx.Frame):
         self._build_status_bar()
         self._set_icons()
         self._build_menu_bar()
+        self._init_firmware_path()
         self._init_ui()
 
         sys.stdout = RedirectText(self.console_ctrl)
@@ -163,6 +206,21 @@ class NodeMcuFlasher(wx.Frame):
         print("Connect your device")
         print("\nIf you chose the serial port auto-select feature you might need to ")
         print("turn off Bluetooth")
+
+    def _init_firmware_path(self):
+        # d = os.path.dirname(sys.modules["firmwares"].__file__)
+        # d = os.path.dirname('./firmwares')
+        if getattr(sys, 'frozen', False):
+            # if you are running in a |PyInstaller| bundle
+            extDataDir = sys._MEIPASS
+        else:
+            # we are running in a normal Python environment
+            extDataDir = os.getcwd()
+
+        self._config.rboot_path = os.path.join(extDataDir, 'firmwares', 'rboot.bin')
+        self._config.blank_config_path = os.path.join(extDataDir, 'firmwares', 'blank_config.bin')
+        print(self._config.rboot_path)
+        print(self._config.blank_config_path)
 
     def _init_ui(self):
         def on_reload(event):
@@ -190,6 +248,11 @@ class NodeMcuFlasher(wx.Frame):
             self.console_ctrl.SetValue("")
             worker = FlashingThread(self, self._config)
             worker.start()
+        
+        def on_clicked_debug(event):
+            self.console_ctrl.SetValue("")
+            debug_worker = DebugThread(self, self._config)
+            debug_worker.start()
 
         def on_select_port(event):
             choice = event.GetEventObject()
@@ -266,8 +329,22 @@ class NodeMcuFlasher(wx.Frame):
         add_erase_radio_button(erase_boxsizer, 0, False, "no", erase is False)
         add_erase_radio_button(erase_boxsizer, 1, True, "yes, wipes all data", erase is True)
 
-        button = wx.Button(panel, -1, "Flash NodeMCU")
+     
+        button = wx.Button(panel, -1, "Flash")
         button.Bind(wx.EVT_BUTTON, on_clicked)
+
+        # debug_button = wx.Button(panel, -1, "Serial Monitor")
+        # debug_button.Bind(wx.EVT_BUTTON, on_clicked_debug)
+
+        # stop_debug_button = wx.Button(panel, -1, "Stop Monitor")
+        # stop_debug_button.Bind(wx.EVT_BUTTON, on_clicked_debug_stop)
+
+        flash_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
+        flash_boxsizer.Add(button, 1, wx.EXPAND)
+        flash_boxsizer.AddStretchSpacer(0)
+        # flash_boxsizer.Add(debug_button, 0, wx.ALIGN_RIGHT, 20)
+        # flash_boxsizer.Add(stop_debug_button, 0, wx.ALIGN_RIGHT, 20)
+
 
         self.console_ctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
         self.console_ctrl.SetFont(wx.Font((0, 13), wx.FONTFAMILY_TELETYPE, wx.FONTSTYLE_NORMAL,
@@ -277,7 +354,7 @@ class NodeMcuFlasher(wx.Frame):
         self.console_ctrl.SetDefaultStyle(wx.TextAttr(wx.BLUE))
 
         port_label = wx.StaticText(panel, label="Serial port")
-        file_label = wx.StaticText(panel, label="NodeMCU firmware")
+        file_label = wx.StaticText(panel, label="Firmware")
         baud_label = wx.StaticText(panel, label="Baud rate")
         flashmode_label = wx.StaticText(panel, label="Flash mode")
 
@@ -309,7 +386,8 @@ class NodeMcuFlasher(wx.Frame):
                     baud_label, baud_boxsizer,
                     flashmode_label_boxsizer, flashmode_boxsizer,
                     erase_label, erase_boxsizer,
-                    (wx.StaticText(panel, label="")), (button, 1, wx.EXPAND),
+                    # (wx.StaticText(panel, label="")), (button, 1, wx.EXPAND),
+                    (wx.StaticText(panel, label="")), (flash_boxsizer, 1, wx.EXPAND),
                     (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
         fgs.AddGrowableRow(6, 1)
         fgs.AddGrowableCol(1, 1)
@@ -337,7 +415,7 @@ class NodeMcuFlasher(wx.Frame):
     def _build_status_bar(self):
         self.statusBar = self.CreateStatusBar(2, wx.STB_SIZEGRIP)
         self.statusBar.SetStatusWidths([-2, -1])
-        status_text = "Welcome to NodeMCU PyFlasher %s" % __version__
+        status_text = "Based on marcelstoer/nodemcu-pyflasher %s" % __version__
         self.statusBar.SetStatusText(status_text, 0)
 
     def _build_menu_bar(self):
@@ -346,16 +424,16 @@ class NodeMcuFlasher(wx.Frame):
         # File menu
         file_menu = wx.Menu()
         wx.App.SetMacExitMenuItemId(wx.ID_EXIT)
-        exit_item = file_menu.Append(wx.ID_EXIT, "E&xit\tCtrl-Q", "Exit NodeMCU PyFlasher")
+        exit_item = file_menu.Append(wx.ID_EXIT, "E&xit\tCtrl-Q", "Exit HassLight Flasher")
         exit_item.SetBitmap(images.Exit.GetBitmap())
         self.Bind(wx.EVT_MENU, self._on_exit_app, exit_item)
-        self.menuBar.Append(file_menu, "&File")
+        # self.menuBar.Append(file_menu, "&File")
 
         # Help menu
-        help_menu = wx.Menu()
-        help_item = help_menu.Append(wx.ID_ABOUT, '&About NodeMCU PyFlasher', 'About')
-        self.Bind(wx.EVT_MENU, self._on_help_about, help_item)
-        self.menuBar.Append(help_menu, '&Help')
+        # help_menu = wx.Menu()
+        # help_item = help_menu.Append(wx.ID_ABOUT, '&About NodeMCU PyFlasher', 'About')
+        # self.Bind(wx.EVT_MENU, self._on_help_about, help_item)
+        # self.menuBar.Append(help_menu, '&Help')
 
         self.SetMenuBar(self.menuBar)
 
@@ -404,7 +482,7 @@ class MySplashScreen(wx.adv.SplashScreen):
             self._show_main()
 
     def _show_main(self):
-        frame = NodeMcuFlasher(None, "NodeMCU PyFlasher")
+        frame = NodeMcuFlasher(None, "HassLight Flasher")
         frame.Show()
         if self.__fc.IsRunning():
             self.Raise()
@@ -416,7 +494,7 @@ class MySplashScreen(wx.adv.SplashScreen):
 class App(wx.App, wx.lib.mixins.inspection.InspectionMixin):
     def OnInit(self):
         wx.SystemOptions.SetOption("mac.window-plain-transition", 1)
-        self.SetAppName("NodeMCU PyFlasher")
+        self.SetAppName("HassLight Flasher")
 
         # Create and show the splash screen.  It will then create and
         # show the main frame when it is time to do so.  Normally when

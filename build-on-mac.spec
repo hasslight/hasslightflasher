@@ -4,7 +4,7 @@ block_cipher = None
 
 a = Analysis(['nodemcu-pyflasher.py'],
              binaries=None,
-             datas=[("images", "images")],
+             datas=[("images", "images"),("firmwares", "firmwares")],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
@@ -19,12 +19,12 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          name='NodeMCU-PyFlasher',
+          name='HassLightFlasher',
           debug=False,
           strip=False,
           upx=True,
           console=False , icon='images/icon-256.icns')
 app = BUNDLE(exe,
-             name='NodeMCU-PyFlasher-4.0.app',
+             name='HassLightFlasher-4.0.app',
              icon='./images/icon-256.icns',
-             bundle_identifier='com.frightanic.nodemcu-pyflasher')
+             bundle_identifier='com.hasslight.flasher')
