@@ -191,7 +191,9 @@ class NodeMcuFlasher(wx.Frame):
     def __init__(self, parent, title):
         wx.Frame.__init__(self, parent, -1, title, size=(725, 650),
                           style=wx.DEFAULT_FRAME_STYLE | wx.NO_FULL_REPAINT_ON_RESIZE)
+        # print(self._get_config_file_path())
         self._config = FlashConfig.load(self._get_config_file_path())
+        # print(self._config.__dict__)
 
         self._build_status_bar()
         self._set_icons()
@@ -219,8 +221,8 @@ class NodeMcuFlasher(wx.Frame):
 
         self._config.rboot_path = os.path.join(extDataDir, 'firmwares', 'rboot.bin')
         self._config.blank_config_path = os.path.join(extDataDir, 'firmwares', 'blank_config.bin')
-        print(self._config.rboot_path)
-        print(self._config.blank_config_path)
+        # print(self._config.rboot_path)
+        # print(self._config.blank_config_path)
 
     def _init_ui(self):
         def on_reload(event):
@@ -439,7 +441,7 @@ class NodeMcuFlasher(wx.Frame):
 
     @staticmethod
     def _get_config_file_path():
-        return wx.StandardPaths.Get().GetUserConfigDir() + "/nodemcu-pyflasher.json"
+        return wx.StandardPaths.Get().GetUserConfigDir() + "/hasslightflasher.json"
 
     # Menu methods
     def _on_exit_app(self, event):
