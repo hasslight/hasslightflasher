@@ -3,6 +3,8 @@
 1. mkdir icons.iconset
 
 2. create png sizes
+
+>    
     sips -z 16 16     icon-256.png --out icons.iconset/icon_16x16.png
     sips -z 32 32     icon-256.png --out icons.iconset/icon_16x16@2x.png
     sips -z 32 32     icon-256.png --out icons.iconset/icon_32x32.png
