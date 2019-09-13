@@ -84,15 +84,23 @@ class FlashingThread(threading.Thread):
                 command.append("--port")
                 command.append(self._config.port)
 
-            command.extend(["--baud", str(self._config.baud),
-                            # "--after", "soft_reset",
+            if self._config.is_homekit:
+                command.extend(["--baud", str(self._config.baud),
+                                # "--after", "soft_reset",
+                                "write_flash",
+                                "--flash_size", "detect",
+                                "--flash_mode", self._config.mode,
+                                "--flash_freq", "40m",
+                                "0x0", self._config.rboot_path,
+                                "0x1000", self._config.blank_config_path,
+                                "0x2000", self._config.firmware_path])
+            else:
+                command.extend(["--baud", str(self._config.baud),
+                            # "--after", "no_reset",
                             "write_flash",
-                            "--flash_size", "detect",
                             "--flash_mode", self._config.mode,
-                            "--flash_freq", "40m",
-                            "0x0", self._config.rboot_path,
-                            "0x1000", self._config.blank_config_path,
-                            "0x2000", self._config.firmware_path])
+                            "0x00000", self._config.firmware_path])
+
 
             if self._config.erase_before_flash:
                 command.append("--erase-all")
@@ -151,6 +159,7 @@ class FlashConfig:
     def __init__(self):
         self.baud = 115200
         self.erase_before_flash = False
+        self.is_homekit = True
         self.mode = "dio"
         self.firmware_path = None
         self.rboot_path = None
@@ -167,6 +176,7 @@ class FlashConfig:
             conf.baud = data['baud']
             conf.mode = data['mode']
             conf.erase_before_flash = data['erase']
+            conf.is_homekit = data['is_homekit']
         return conf
 
     def safe(self, file_path):
@@ -175,6 +185,7 @@ class FlashConfig:
             'baud': self.baud,
             'mode': self.mode,
             'erase': self.erase_before_flash,
+            'is_homekit': self.is_homekit,
         }
         with open(file_path, 'w') as f:
             json.dump(data, f)
@@ -245,6 +256,12 @@ class NodeMcuFlasher(wx.Frame):
 
             if radio_button.GetValue():
                 self._config.erase_before_flash = radio_button.erase
+        
+        def on_is_homekit_changed(event):
+            radio_button = event.GetEventObject()
+
+            if radio_button.GetValue():
+                self._config.is_homekit = radio_button.is_homekit
 
         def on_clicked(event):
             self.console_ctrl.SetValue("")
@@ -267,7 +284,7 @@ class NodeMcuFlasher(wx.Frame):
 
         hbox = wx.BoxSizer(wx.HORIZONTAL)
 
-        fgs = wx.FlexGridSizer(7, 2, 10, 10)
+        fgs = wx.FlexGridSizer(8, 2, 10, 10)
 
         self.choice = wx.Choice(panel, choices=self._get_serial_ports())
         self.choice.Bind(wx.EVT_CHOICE, on_select_port)
@@ -328,9 +345,24 @@ class NodeMcuFlasher(wx.Frame):
             sizer.AddSpacer(10)
 
         erase = self._config.erase_before_flash
-        add_erase_radio_button(erase_boxsizer, 0, False, "no", erase is False)
-        add_erase_radio_button(erase_boxsizer, 1, True, "yes, wipes all data", erase is True)
+        add_erase_radio_button(erase_boxsizer, 0, False, "No", erase is False)
+        add_erase_radio_button(erase_boxsizer, 1, True, "Yes, wipes all data", erase is True)
 
+        is_homekit_boxsizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        def add_is_homekit_radio_button(sizer, index, is_homekit, label, value):
+            style = wx.RB_GROUP if index == 0 else 0
+            radio_button = wx.RadioButton(panel, name="is-homekit-%s" % is_homekit, label="%s" % label, style=style)
+            radio_button.Bind(wx.EVT_RADIOBUTTON, on_is_homekit_changed)
+            radio_button.is_homekit = is_homekit
+            radio_button.SetValue(value)
+            sizer.Add(radio_button)
+            sizer.AddSpacer(10)
+
+        is_homekit = self._config.is_homekit
+        add_is_homekit_radio_button(is_homekit_boxsizer, 0, True, "Apple Homekit", is_homekit is True)
+        add_is_homekit_radio_button(is_homekit_boxsizer, 1, False, "Default / Home Assistant / MQTT", is_homekit is False)
+        
      
         button = wx.Button(panel, -1, "Flash")
         button.Bind(wx.EVT_BUTTON, on_clicked)
@@ -380,18 +412,20 @@ class NodeMcuFlasher(wx.Frame):
         flashmode_label_boxsizer.Add(icon, 0, wx.ALIGN_RIGHT, 20)
 
         erase_label = wx.StaticText(panel, label="Erase flash")
+        is_homekit_label = wx.StaticText(panel, label="Integration")
         console_label = wx.StaticText(panel, label="Console")
 
         fgs.AddMany([
                     port_label, (serial_boxsizer, 1, wx.EXPAND),
                     file_label, (file_picker, 1, wx.EXPAND),
+                    is_homekit_label, is_homekit_boxsizer,
                     baud_label, baud_boxsizer,
                     flashmode_label_boxsizer, flashmode_boxsizer,
                     erase_label, erase_boxsizer,
                     # (wx.StaticText(panel, label="")), (button, 1, wx.EXPAND),
                     (wx.StaticText(panel, label="")), (flash_boxsizer, 1, wx.EXPAND),
                     (console_label, 1, wx.EXPAND), (self.console_ctrl, 1, wx.EXPAND)])
-        fgs.AddGrowableRow(6, 1)
+        fgs.AddGrowableRow(7, 1)
         fgs.AddGrowableCol(1, 1)
         hbox.Add(fgs, proportion=2, flag=wx.ALL | wx.EXPAND, border=15)
         panel.SetSizer(hbox)
