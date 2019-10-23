@@ -164,7 +164,7 @@ class FlashConfig:
         self.firmware_path = None
         self.rboot_path = None
         self.blank_config_path = None
-        self.port = None
+        self.port = __auto_select__ + " " + __auto_select_explanation__
 
     @classmethod
     def load(cls, file_path):
